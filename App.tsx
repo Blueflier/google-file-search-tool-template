@@ -26,6 +26,7 @@ declare global {
 const App: React.FC = () => {
     const [status, setStatus] = useState<AppStatus>(AppStatus.Initializing);
     const [isApiKeySelected, setIsApiKeySelected] = useState(false);
+    const [usingEnvKey, setUsingEnvKey] = useState(false);
     const [apiKeyError, setApiKeyError] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [uploadProgress, setUploadProgress] = useState<{ current: number, total: number, message?: string, fileName?: string } | null>(null);
@@ -40,8 +41,14 @@ const App: React.FC = () => {
     useEffect(() => {
         ragStoreNameRef.current = activeRagStoreName;
     }, [activeRagStoreName]);
-    
+
     const checkApiKey = useCallback(async () => {
+        if (process.env.API_KEY) {
+            setIsApiKeySelected(true);
+            setUsingEnvKey(true);
+            return;
+        }
+
         if (window.aistudio?.hasSelectedApiKey) {
             try {
                 const hasKey = await window.aistudio.hasSelectedApiKey();
@@ -60,7 +67,7 @@ const App: React.FC = () => {
                 checkApiKey();
             }
         };
-        
+
         checkApiKey(); // Initial check when the component mounts.
 
         // Listen for visibility changes and window focus. This ensures that if the user
@@ -126,7 +133,7 @@ const App: React.FC = () => {
             throw new Error("API Key is required.");
         }
         if (files.length === 0) return;
-        
+
         setApiKeyError(null);
 
         try {
@@ -135,7 +142,7 @@ const App: React.FC = () => {
             handleError("Initialization failed. Please select a valid API Key.", err);
             throw err;
         }
-        
+
         setStatus(AppStatus.Uploading);
         const totalSteps = files.length + 2;
         setUploadProgress({ current: 0, total: totalSteps, message: "Creating document index..." });
@@ -143,11 +150,11 @@ const App: React.FC = () => {
         try {
             const storeName = `chat-session-${Date.now()}`;
             const ragStoreName = await geminiService.createRagStore(storeName);
-            
+
             setUploadProgress({ current: 1, total: totalSteps, message: "Generating embeddings..." });
 
             for (let i = 0; i < files.length; i++) {
-                setUploadProgress(prev => ({ 
+                setUploadProgress(prev => ({
                     ...(prev!),
                     current: i + 1,
                     message: "Generating embeddings...",
@@ -155,13 +162,13 @@ const App: React.FC = () => {
                 }));
                 await geminiService.uploadToRagStore(ragStoreName, files[i]);
             }
-            
+
             setUploadProgress({ current: files.length + 1, total: totalSteps, message: "Generating suggestions...", fileName: "" });
             const questions = await geminiService.generateExampleQuestions(ragStoreName);
             setExampleQuestions(questions);
 
             setUploadProgress({ current: totalSteps, total: totalSteps, message: "All set!", fileName: "" });
-            
+
             await new Promise(resolve => setTimeout(resolve, 500)); // Short delay to show "All set!"
 
             let docName = '';
@@ -233,9 +240,9 @@ const App: React.FC = () => {
             setIsQueryLoading(false);
         }
     };
-    
+
     const renderContent = () => {
-        switch(status) {
+        switch (status) {
             case AppStatus.Initializing:
                 return (
                     <div className="flex items-center justify-center h-screen">
@@ -243,7 +250,15 @@ const App: React.FC = () => {
                     </div>
                 );
             case AppStatus.Welcome:
-                 return <WelcomeScreen onUpload={handleUploadAndStartChat} apiKeyError={apiKeyError} files={files} setFiles={setFiles} isApiKeySelected={isApiKeySelected} onSelectKey={handleSelectKey} />;
+                return <WelcomeScreen
+                    onUpload={handleUploadAndStartChat}
+                    apiKeyError={apiKeyError}
+                    files={files}
+                    setFiles={setFiles}
+                    isApiKeySelected={isApiKeySelected}
+                    onSelectKey={handleSelectKey}
+                    usingEnvKey={usingEnvKey}
+                />;
             case AppStatus.Uploading:
                 let icon = null;
                 if (uploadProgress?.message === "Creating document index...") {
@@ -256,15 +271,15 @@ const App: React.FC = () => {
                     icon = <img src="https://services.google.com/fh/files/misc/applet-completion_2.png" alt="Completion icon" className="h-240 w-240 rounded-lg object-cover" />;
                 }
 
-                return <ProgressBar 
-                    progress={uploadProgress?.current || 0} 
-                    total={uploadProgress?.total || 1} 
-                    message={uploadProgress?.message || "Preparing your chat..."} 
+                return <ProgressBar
+                    progress={uploadProgress?.current || 0}
+                    total={uploadProgress?.total || 1}
+                    message={uploadProgress?.message || "Preparing your chat..."}
                     fileName={uploadProgress?.fileName}
                     icon={icon}
                 />;
             case AppStatus.Chatting:
-                return <ChatInterface 
+                return <ChatInterface
                     documentName={documentName}
                     history={chatHistory}
                     isQueryLoading={isQueryLoading}
@@ -273,17 +288,25 @@ const App: React.FC = () => {
                     exampleQuestions={exampleQuestions}
                 />;
             case AppStatus.Error:
-                 return (
+                return (
                     <div className="flex flex-col items-center justify-center h-screen bg-red-900/20 text-red-300">
                         <h1 className="text-3xl font-bold mb-4">Application Error</h1>
                         <p className="max-w-md text-center mb-4">{error}</p>
                         <button onClick={clearError} className="px-4 py-2 rounded-md bg-gem-mist hover:bg-gem-mist/70 transition-colors" title="Return to the welcome screen">
-                           Try Again
+                            Try Again
                         </button>
                     </div>
                 );
             default:
-                 return <WelcomeScreen onUpload={handleUploadAndStartChat} apiKeyError={apiKeyError} files={files} setFiles={setFiles} isApiKeySelected={isApiKeySelected} onSelectKey={handleSelectKey} />;
+                return <WelcomeScreen
+                    onUpload={handleUploadAndStartChat}
+                    apiKeyError={apiKeyError}
+                    files={files}
+                    setFiles={setFiles}
+                    isApiKeySelected={isApiKeySelected}
+                    onSelectKey={handleSelectKey}
+                    usingEnvKey={usingEnvKey}
+                />;
         }
     }
 
