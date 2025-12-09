@@ -1,0 +1,1238 @@
+PROJECT SUMMARY: Google File Search Tool Template
+
+OVERVIEW
+This project is a React-based web application that demonstrates how to use the Google Gemini API (specifically the File Search / RAG capabilities) to chat with uploaded documents. It allows users to upload PDF, TXT, or MD files, processes them into a temporary RAG store, and enables a chat interface where users can ask questions about the documents.
+
+TECH STACK
+- Frontend Framework: React 19
+- Build Tool: Vite
+- Language: TypeScript
+- Styling: Tailwind CSS
+- AI Integration: @google/genai SDK
+
+CORE WORKFLOW
+1. Initialization: The app checks for a Gemini API key (either from environment variables or via `window.aistudio` integration).
+2. Welcome Screen: User selects files to upload.
+3. Processing:
+   - A new RAG store (FileSearchStore) is created.
+   - Files are uploaded to the store.
+   - The app waits for processing to complete.
+   - Example questions are generated using the Gemini model.
+4. Chat Interface:
+   - User sends messages.
+   - The app queries the RAG store using `geminiService.fileSearch`.
+   - Responses are displayed with "grounding chunks" (citations/sources).
+5. Cleanup: The RAG store is deleted when the user starts a new chat or closes the tab.
+
+FILE STRUCTURE
+.
+├── .env                    # Environment variables (API_KEY)
+├── App.tsx                 # Main application logic and state machine
+├── components/
+│   ├── ChatInterface.tsx   # Chat UI with message history and source viewing
+│   ├── ProgressBar.tsx     # Progress indicator during upload/processing
+│   ├── Spinner.tsx         # Loading spinner
+│   ├── WelcomeScreen.tsx   # Initial screen for file selection and API key
+│   └── icons/              # SVG icons (Send, Refresh, Trash, UploadCloud)
+├── index.html              # Entry HTML with Tailwind config
+├── index.tsx               # React entry point
+├── services/
+│   └── geminiService.ts    # Wrapper for Google GenAI SDK interactions
+├── types.ts                # TypeScript definitions
+└── vite.config.ts          # Vite configuration
+
+REQUIREMENTS & SETUP
+1. Prerequisites: Node.js (v18+ recommended), npm.
+2. API Key: A Google Gemini API key is required. Use the provided key: `AIzaSyBWWkoTK2eOrYMbj7jRZAh3yLeTJH3S3j8`. It can be set in `.env` as `GEMINI_API_KEY` or selected via the UI if running in a compatible environment (like AI Studio).
+3. Installation: `npm install`
+4. Development: `npm run dev`
+5. Build: `npm run build`
+
+UI/UX & STYLING INSTRUCTIONS
+The goal is to implement a custom UI that matches the "vibe" of provided screenshots while strictly retaining the core functionality described above.
+
+1.  **Visual Analysis**:
+    *   Analyze the provided "vibe" screenshots (to be supplied separately).
+    *   Extract the color palette (primary, secondary, background, text colors).
+    *   Identify typography styles (font families, weights, sizes).
+    *   Note spacing patterns, border radii, and shadow effects.
+    *   Observe component styling (buttons, inputs, cards, modals).
+
+2.  **Implementation**:
+    *   Apply the extracted design system to the frontend components (`App.tsx`, `WelcomeScreen.tsx`, `ChatInterface.tsx`, etc.).
+    *   Use Tailwind CSS for styling. Extend the `tailwind.config` in `index.html` or `tailwind.config.js` with the new colors and fonts.
+    *   **CRITICAL**: Do NOT alter the underlying logic or state management (e.g., `geminiService` calls, `AppStatus` transitions, chat history management). The app must function exactly as the template, just looking different.
+    *   Ensure responsiveness (mobile/desktop) is maintained or improved based on the new design.
+
+KEY COMPONENT DETAILS
+
+1. App.tsx
+   - Manages `AppStatus` (Initializing, Welcome, Uploading, Chatting, Error).
+   - Handles the "Upload and Chat" flow: `createRagStore` -> `uploadToRagStore` -> `generateExampleQuestions`.
+   - Manages the chat loop and cleanup.
+
+2. geminiService.ts
+   - `initialize()`: Sets up the `GoogleGenAI` client.
+   - `createRagStore()`: Creates a `fileSearchStores` resource.
+   - `uploadToRagStore()`: Uploads files and polls for completion.
+   - `fileSearch()`: Generates content using the `gemini-2.5-flash` model with the `fileSearch` tool enabled.
+   - `generateExampleQuestions()`: Prompts the model to generate relevant questions based on the uploaded documents.
+
+3. ChatInterface.tsx
+   - Renders chat history with Markdown support.
+   - Displays "Sources" (grounding chunks) for model responses.
+   - Handles user input and "New Chat" action.
+
+---
+
+CODEBASE CONTENT
+Below are the contents of the critical files to recreate this project.
+
+=== .env ===
+GEMINI_API_KEY=AIzaSyBWWkoTK2eOrYMbj7jRZAh3yLeTJH3S3j8
+
+=== package.json ===
+{
+  "name": "google-file-search-tool-template",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "@google/genai": "^1.29.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}
+
+=== vite.config.ts ===
+import path from 'path';
+import { defineConfig, loadEnv } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig(({ mode }) => {
+    const env = loadEnv(mode, '.', '');
+    return {
+      server: {
+        port: 3000,
+        host: '0.0.0.0',
+      },
+      plugins: [react()],
+      define: {
+      define: {
+        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY || "AIzaSyBWWkoTK2eOrYMbj7jRZAh3yLeTJH3S3j8"),
+        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY || "AIzaSyBWWkoTK2eOrYMbj7jRZAh3yLeTJH3S3j8")
+      },
+      resolve: {
+        alias: {
+          '@': path.resolve(__dirname, '.'),
+        }
+      }
+    };
+});
+
+=== services/geminiService.ts ===
+import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
+import { RagStore, Document, QueryResult, CustomMetadata } from '../types';
+
+let ai: GoogleGenAI;
+
+export function initialize() {
+    const apiKey = process.env.API_KEY || "AIzaSyBWWkoTK2eOrYMbj7jRZAh3yLeTJH3S3j8";
+    ai = new GoogleGenAI({ apiKey });
+}
+
+async function delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function createRagStore(displayName: string): Promise<string> {
+    if (!ai) throw new Error("Gemini AI not initialized");
+    const ragStore = await ai.fileSearchStores.create({ config: { displayName } });
+    if (!ragStore.name) {
+        throw new Error("Failed to create RAG store: name is missing.");
+    }
+    return ragStore.name;
+}
+
+export async function uploadToRagStore(ragStoreName: string, file: File): Promise<void> {
+    if (!ai) throw new Error("Gemini AI not initialized");
+    
+    let op = await ai.fileSearchStores.uploadToFileSearchStore({
+        fileSearchStoreName: ragStoreName,
+        file: file
+    });
+
+    while (!op.done) {
+        await delay(3000);
+        op = await ai.operations.get({operation: op});
+    }
+}
+
+export async function fileSearch(ragStoreName: string, query: string): Promise<QueryResult> {
+    if (!ai) throw new Error("Gemini AI not initialized");
+    const response: GenerateContentResponse = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: query + "DO NOT ASK THE USER TO READ THE MANUAL, pinpoint the relevant sections in the response itself.",
+        config: {
+            tools: [
+                    {
+                        fileSearch: {
+                            fileSearchStoreNames: [ragStoreName],
+                        }
+                    }
+                ]
+        }
+    });
+
+    const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    return {
+        text: response.text,
+        groundingChunks: groundingChunks,
+    };
+}
+
+export async function generateExampleQuestions(ragStoreName: string): Promise<string[]> {
+    if (!ai) throw new Error("Gemini AI not initialized");
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: "You are provided some user manuals for some products. Figure out for what product each manual is for, based on the cover page contents. DO NOT GUESS OR HALLUCINATE THE PRODUCT. Then, for each product, generate 4 short and practical example questions a user might ask about it in English. Return the questions as a JSON array of objects. Each object should have a 'product' key with the product name as a string, and a 'questions' key with an array of 4 question strings. For example: ```json[{\"product\": \"Product A\", \"questions\": [\"q1\", \"q2\"]}, {\"product\": \"Product B\", \"questions\": [\"q3\", \"q4\"]}]```",
+            config: {
+                tools: [
+                    {
+                        fileSearch: {
+                            fileSearchStoreNames: [ragStoreName],
+                        }
+                    }
+                ]
+            }
+        });
+        
+        let jsonText = response.text.trim();
+
+        const jsonMatch = jsonText.match(/```json\n([\s\S]*?)\n```/);
+        if (jsonMatch && jsonMatch[1]) {
+            jsonText = jsonMatch[1];
+        } else {
+            const firstBracket = jsonText.indexOf('[');
+            const lastBracket = jsonText.lastIndexOf(']');
+            if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+                jsonText = jsonText.substring(firstBracket, lastBracket + 1);
+            }
+        }
+        
+        const parsedData = JSON.parse(jsonText);
+        
+        if (Array.isArray(parsedData)) {
+            if (parsedData.length === 0) {
+                return [];
+            }
+            const firstItem = parsedData[0];
+
+            // Handle new format: array of {product, questions[]}
+            if (typeof firstItem === 'object' && firstItem !== null && 'questions' in firstItem && Array.isArray(firstItem.questions)) {
+                return parsedData.flatMap(item => (item.questions || [])).filter(q => typeof q === 'string');
+            }
+            
+            // Handle old format: array of strings
+            if (typeof firstItem === 'string') {
+                return parsedData.filter(q => typeof q === 'string');
+            }
+        }
+        
+        console.warn("Received unexpected format for example questions:", parsedData);
+        return [];
+    } catch (error) {
+        console.error("Failed to generate or parse example questions:", error);
+        return [];
+    }
+}
+
+export async function deleteRagStore(ragStoreName: string): Promise<void> {
+    if (!ai) throw new Error("Gemini AI not initialized");
+    await ai.fileSearchStores.delete({
+        name: ragStoreName,
+        config: { force: true },
+    });
+}
+
+=== App.tsx ===
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { AppStatus, ChatMessage } from './types';
+import * as geminiService from './services/geminiService';
+import Spinner from './components/Spinner';
+import WelcomeScreen from './components/WelcomeScreen';
+import ProgressBar from './components/ProgressBar';
+import ChatInterface from './components/ChatInterface';
+
+declare global {
+    interface AIStudio {
+        openSelectKey: () => Promise<void>;
+        hasSelectedApiKey: () => Promise<boolean>;
+    }
+    interface Window {
+        aistudio?: AIStudio;
+    }
+}
+
+const App: React.FC = () => {
+    const [status, setStatus] = useState<AppStatus>(AppStatus.Initializing);
+    const [isApiKeySelected, setIsApiKeySelected] = useState(false);
+    const [usingEnvKey, setUsingEnvKey] = useState(false);
+    const [apiKeyError, setApiKeyError] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [uploadProgress, setUploadProgress] = useState<{ current: number, total: number, message?: string, fileName?: string } | null>(null);
+    const [activeRagStoreName, setActiveRagStoreName] = useState<string | null>(null);
+    const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+    const [isQueryLoading, setIsQueryLoading] = useState(false);
+    const [exampleQuestions, setExampleQuestions] = useState<string[]>([]);
+    const [documentName, setDocumentName] = useState<string>('');
+    const [files, setFiles] = useState<File[]>([]);
+    const ragStoreNameRef = useRef(activeRagStoreName);
+
+    useEffect(() => {
+        ragStoreNameRef.current = activeRagStoreName;
+    }, [activeRagStoreName]);
+
+    const checkApiKey = useCallback(async () => {
+        if (process.env.API_KEY) {
+            setIsApiKeySelected(true);
+            setUsingEnvKey(true);
+            return;
+        }
+
+        if (window.aistudio?.hasSelectedApiKey) {
+            try {
+                const hasKey = await window.aistudio.hasSelectedApiKey();
+                setIsApiKeySelected(hasKey);
+            } catch (e) {
+                console.error("Error checking for API key:", e);
+                setIsApiKeySelected(false);
+            }
+        }
+    }, []);
+
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                checkApiKey();
+            }
+        };
+
+        checkApiKey();
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('focus', checkApiKey);
+
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('focus', checkApiKey);
+        };
+    }, [checkApiKey]);
+
+    useEffect(() => {
+        const handleUnload = () => {
+            if (ragStoreNameRef.current) {
+                geminiService.deleteRagStore(ragStoreNameRef.current)
+                    .catch(err => console.error("Error deleting RAG store on unload:", err));
+            }
+        };
+
+        window.addEventListener('beforeunload', handleUnload);
+
+        return () => {
+            window.removeEventListener('beforeunload', handleUnload);
+        };
+    }, []);
+
+
+    const handleError = (message: string, err: any) => {
+        console.error(message, err);
+        setError(`${message}${err ? `: ${err instanceof Error ? err.message : String(err)}` : ''}`);
+        setStatus(AppStatus.Error);
+    };
+
+    const clearError = () => {
+        setError(null);
+        setStatus(AppStatus.Welcome);
+    }
+
+    useEffect(() => {
+        setStatus(AppStatus.Welcome);
+    }, []);
+
+    const handleSelectKey = async () => {
+        if (window.aistudio?.openSelectKey) {
+            try {
+                await window.aistudio.openSelectKey();
+                await checkApiKey();
+            } catch (err) {
+                console.error("Failed to open API key selection dialog", err);
+            }
+        } else {
+            console.log('window.aistudio.openSelectKey() not available.');
+            alert('API key selection is not available in this environment.');
+        }
+    };
+
+    const handleUploadAndStartChat = async () => {
+        if (!isApiKeySelected) {
+            setApiKeyError("Please select your Gemini API Key first.");
+            throw new Error("API Key is required.");
+        }
+        if (files.length === 0) return;
+
+        setApiKeyError(null);
+
+        try {
+            geminiService.initialize();
+        } catch (err) {
+            handleError("Initialization failed. Please select a valid API Key.", err);
+            throw err;
+        }
+
+        setStatus(AppStatus.Uploading);
+        const totalSteps = files.length + 2;
+        setUploadProgress({ current: 0, total: totalSteps, message: "Creating document index..." });
+
+        try {
+            const storeName = `chat-session-${Date.now()}`;
+            const ragStoreName = await geminiService.createRagStore(storeName);
+
+            setUploadProgress({ current: 1, total: totalSteps, message: "Generating embeddings..." });
+
+            for (let i = 0; i < files.length; i++) {
+                setUploadProgress(prev => ({
+                    ...(prev!),
+                    current: i + 1,
+                    message: "Generating embeddings...",
+                    fileName: `(${i + 1}/${files.length}) ${files[i].name}`
+                }));
+                await geminiService.uploadToRagStore(ragStoreName, files[i]);
+            }
+
+            setUploadProgress({ current: files.length + 1, total: totalSteps, message: "Generating suggestions...", fileName: "" });
+            const questions = await geminiService.generateExampleQuestions(ragStoreName);
+            setExampleQuestions(questions);
+
+            setUploadProgress({ current: totalSteps, total: totalSteps, message: "All set!", fileName: "" });
+
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            let docName = '';
+            if (files.length === 1) {
+                docName = files[0].name;
+            } else if (files.length === 2) {
+                docName = `${files[0].name} & ${files[1].name}`;
+            } else {
+                docName = `${files.length} documents`;
+            }
+            setDocumentName(docName);
+
+            setActiveRagStoreName(ragStoreName);
+            setChatHistory([]);
+            setStatus(AppStatus.Chatting);
+            setFiles([]);
+        } catch (err) {
+            const errorMessage = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+            if (errorMessage.includes('api key not valid') || errorMessage.includes('requested entity was not found')) {
+                setApiKeyError("The selected API key is invalid. Please select a different one and try again.");
+                setIsApiKeySelected(false);
+                setStatus(AppStatus.Welcome);
+            } else {
+                handleError("Failed to start chat session", err);
+            }
+            throw err;
+        } finally {
+            setUploadProgress(null);
+        }
+    };
+
+    const handleEndChat = () => {
+        if (activeRagStoreName) {
+            geminiService.deleteRagStore(activeRagStoreName).catch(err => {
+                console.error("Failed to delete RAG store in background", err);
+            });
+        }
+        setActiveRagStoreName(null);
+        setChatHistory([]);
+        setExampleQuestions([]);
+        setDocumentName('');
+        setFiles([]);
+        setStatus(AppStatus.Welcome);
+    };
+
+    const handleSendMessage = async (message: string) => {
+        if (!activeRagStoreName) return;
+
+        const userMessage: ChatMessage = { role: 'user', parts: [{ text: message }] };
+        setChatHistory(prev => [...prev, userMessage]);
+        setIsQueryLoading(true);
+
+        try {
+            const result = await geminiService.fileSearch(activeRagStoreName, message);
+            const modelMessage: ChatMessage = {
+                role: 'model',
+                parts: [{ text: result.text }],
+                groundingChunks: result.groundingChunks
+            };
+            setChatHistory(prev => [...prev, modelMessage]);
+        } catch (err) {
+            const errorMessage: ChatMessage = {
+                role: 'model',
+                parts: [{ text: "Sorry, I encountered an error. Please try again." }]
+            };
+            setChatHistory(prev => [...prev, errorMessage]);
+            handleError("Failed to get response", err);
+        } finally {
+            setIsQueryLoading(false);
+        }
+    };
+
+    const renderContent = () => {
+        switch (status) {
+            case AppStatus.Initializing:
+                return (
+                    <div className="flex items-center justify-center h-screen">
+                        <Spinner /> <span className="ml-4 text-xl">Initializing...</span>
+                    </div>
+                );
+            case AppStatus.Welcome:
+                return <WelcomeScreen
+                    onUpload={handleUploadAndStartChat}
+                    apiKeyError={apiKeyError}
+                    files={files}
+                    setFiles={setFiles}
+                    isApiKeySelected={isApiKeySelected}
+                    onSelectKey={handleSelectKey}
+                    usingEnvKey={usingEnvKey}
+                />;
+            case AppStatus.Uploading:
+                let icon = null;
+                if (uploadProgress?.message === "Creating document index...") {
+                    icon = <img src="https://services.google.com/fh/files/misc/applet-upload.png" alt="Uploading files icon" className="h-80 w-80 rounded-lg object-cover" />;
+                } else if (uploadProgress?.message === "Generating embeddings...") {
+                    icon = <img src="https://services.google.com/fh/files/misc/applet-creating-embeddings_2.png" alt="Creating embeddings icon" className="h-240 w-240 rounded-lg object-cover" />;
+                } else if (uploadProgress?.message === "Generating suggestions...") {
+                    icon = <img src="https://services.google.com/fh/files/misc/applet-suggestions_2.png" alt="Generating suggestions icon" className="h-240 w-240 rounded-lg object-cover" />;
+                } else if (uploadProgress?.message === "All set!") {
+                    icon = <img src="https://services.google.com/fh/files/misc/applet-completion_2.png" alt="Completion icon" className="h-240 w-240 rounded-lg object-cover" />;
+                }
+
+                return <ProgressBar
+                    progress={uploadProgress?.current || 0}
+                    total={uploadProgress?.total || 1}
+                    message={uploadProgress?.message || "Preparing your chat..."}
+                    fileName={uploadProgress?.fileName}
+                    icon={icon}
+                />;
+            case AppStatus.Chatting:
+                return <ChatInterface
+                    documentName={documentName}
+                    history={chatHistory}
+                    isQueryLoading={isQueryLoading}
+                    onSendMessage={handleSendMessage}
+                    onNewChat={handleEndChat}
+                    exampleQuestions={exampleQuestions}
+                />;
+            case AppStatus.Error:
+                return (
+                    <div className="flex flex-col items-center justify-center h-screen bg-red-900/20 text-red-300">
+                        <h1 className="text-3xl font-bold mb-4">Application Error</h1>
+                        <p className="max-w-md text-center mb-4">{error}</p>
+                        <button onClick={clearError} className="px-4 py-2 rounded-md bg-gem-mist hover:bg-gem-mist/70 transition-colors" title="Return to the welcome screen">
+                            Try Again
+                        </button>
+                    </div>
+                );
+            default:
+                return <WelcomeScreen
+                    onUpload={handleUploadAndStartChat}
+                    apiKeyError={apiKeyError}
+                    files={files}
+                    setFiles={setFiles}
+                    isApiKeySelected={isApiKeySelected}
+                    onSelectKey={handleSelectKey}
+                    usingEnvKey={usingEnvKey}
+                />;
+        }
+    }
+
+    return (
+        <main className="h-screen bg-gem-onyx text-gem-offwhite">
+            {renderContent()}
+        </main>
+    );
+};
+
+export default App;
+
+=== types.ts ===
+export interface RagStore {
+    name: string;
+    displayName: string;
+}
+
+export interface CustomMetadata {
+  key?: string;
+  stringValue?: string;
+  stringListValue?: string[];
+  numericValue?: number;
+}
+
+export interface Document {
+    name: string;
+    displayName: string;
+    customMetadata?: CustomMetadata[];
+}
+
+export interface GroundingChunk {
+    retrievedContext?: {
+        text?: string;
+    };
+}
+
+export interface QueryResult {
+    text: string;
+    groundingChunks: GroundingChunk[];
+}
+
+export enum AppStatus {
+    Initializing,
+    Welcome,
+    Uploading,
+    Chatting,
+    Error,
+}
+
+export interface ChatMessage {
+    role: 'user' | 'model';
+    parts: { text: string }[];
+    groundingChunks?: GroundingChunk[];
+}
+
+=== components/ProgressBar.tsx ===
+import React from 'react';
+
+interface ProgressBarProps {
+  progress: number;
+  total: number;
+  message: string;
+  fileName?: string;
+  icon?: React.ReactNode;
+}
+
+const ProgressBar: React.FC<ProgressBarProps> = ({ progress, total, message, fileName, icon }) => {
+  const percentage = total > 0 ? (progress / total) * 100 : 0;
+
+  return (
+    <div className="flex flex-col items-center justify-center h-full p-4 text-center">
+        {icon && <div className="mb-8">{icon}</div>}
+        <h2 className="text-2xl font-bold mb-2">{message}</h2>
+        <p className="text-gem-offwhite/70 mb-4 h-6 truncate max-w-full px-4" title={fileName}>{fileName || ''}</p>
+        <div className="w-full max-w-md bg-gem-mist rounded-full h-4 overflow-hidden">
+            <div
+                className="bg-gem-blue h-4 rounded-full transition-all duration-300 ease-in-out animate-progress-stripes"
+                style={{ 
+                    width: `${percentage}%`,
+                    backgroundImage: 'linear-gradient(45deg, rgba(255, 255, 255, 0.15) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.15) 75%, transparent 75%, transparent)',
+                    backgroundSize: '1rem 1rem'
+                }}
+            ></div>
+        </div>
+        <p className="mt-4 text-lg">{`${progress} / ${total}`}</p>
+    </div>
+  );
+};
+
+export default ProgressBar;
+
+=== components/Spinner.tsx ===
+import React from 'react';
+
+const Spinner: React.FC = () => {
+    return (
+        <svg
+            className="animate-spin h-5 w-5 text-gem-blue"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+        >
+            <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+            ></circle>
+            <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+            ></path>
+        </svg>
+    );
+};
+
+export default Spinner;
+
+=== index.tsx ===
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+
+const rootElement = document.getElementById('root');
+if (!rootElement) {
+  throw new Error("Could not find root element to mount to");
+}
+
+const root = ReactDOM.createRoot(rootElement);
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+
+=== index.css ===
+/* Empty file, but required for build if referenced */
+
+=== components/icons/SendIcon.tsx ===
+import React from 'react';
+
+const SendIcon: React.FC = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="currentColor" viewBox="0 -960 960 960" stroke="currentColor">
+        <path d="M120-160v-640l760 320-760 320Zm80-120 474-200-474-200v140l240 60-240 60v140Zm0 0v-400 400Z"/>
+    </svg>
+);
+
+export default SendIcon;
+
+=== components/icons/RefreshIcon.tsx ===
+import React from 'react';
+
+const RefreshIcon: React.FC = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="currentColor" viewBox="0 -960 960 960" stroke="currentColor" strokeWidth={2}>
+    <path d="M480-160q-134 0-227-93t-93-227q0-134 93-227t227-93q69 0 132 28.5T720-690v-110h80v280H520v-80h168q-32-56-87.5-88T480-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h84q-28 106-114 173t-196 67Z"/>
+  </svg>
+);
+
+export default RefreshIcon;
+
+=== components/icons/TrashIcon.tsx ===
+import React from 'react';
+
+const TrashIcon: React.FC = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+    </svg>
+);
+
+export default TrashIcon;
+
+=== components/icons/UploadCloudIcon.tsx ===
+import React from 'react';
+
+const UploadCloudIcon: React.FC = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-gem-blue" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
+    </svg>
+);
+
+export default UploadCloudIcon;
+
+=== components/ChatInterface.tsx ===
+import React, { useState, useEffect, useRef } from 'react';
+import { ChatMessage } from '../types';
+import Spinner from './Spinner';
+import SendIcon from './icons/SendIcon';
+import RefreshIcon from './icons/RefreshIcon';
+
+interface ChatInterfaceProps {
+    documentName: string;
+    history: ChatMessage[];
+    isQueryLoading: boolean;
+    onSendMessage: (message: string) => void;
+    onNewChat: () => void;
+    exampleQuestions: string[];
+}
+
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ documentName, history, isQueryLoading, onSendMessage, onNewChat, exampleQuestions }) => {
+    const [query, setQuery] = useState('');
+    const [currentSuggestion, setCurrentSuggestion] = useState('');
+    const [modalContent, setModalContent] = useState<string | null>(null);
+    const chatEndRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (exampleQuestions.length === 0) {
+            setCurrentSuggestion('');
+            return;
+        }
+
+        setCurrentSuggestion(exampleQuestions[0]);
+        let suggestionIndex = 0;
+        const intervalId = setInterval(() => {
+            suggestionIndex = (suggestionIndex + 1) % exampleQuestions.length;
+            setCurrentSuggestion(exampleQuestions[suggestionIndex]);
+        }, 5000);
+
+        return () => clearInterval(intervalId);
+    }, [exampleQuestions]);
+    
+    const renderMarkdown = (text: string) => {
+        if (!text) return { __html: '' };
+
+        const lines = text.split('\n');
+        let html = '';
+        let listType: 'ul' | 'ol' | null = null;
+        let paraBuffer = '';
+
+        function flushPara() {
+            if (paraBuffer) {
+                html += `<p class="my-2">${paraBuffer}</p>`;
+                paraBuffer = '';
+            }
+        }
+
+        function flushList() {
+            if (listType) {
+                html += `</${listType}>`;
+                listType = null;
+            }
+        }
+
+        for (const rawLine of lines) {
+            const line = rawLine
+                .replace(/\*\*(.*?)\*\*|__(.*?)__/g, '<strong>$1$2</strong>')
+                .replace(/\*(.*?)\*|_(.*?)_/g, '<em>$1$2</em>')
+                .replace(/`([^`]+)`/g, '<code class="bg-gem-mist/50 px-1 py-0.5 rounded-sm font-mono text-sm">$1</code>');
+
+            const isOl = line.match(/^\s*\d+\.\s(.*)/);
+            const isUl = line.match(/^\s*[\*\-]\s(.*)/);
+
+            if (isOl) {
+                flushPara();
+                if (listType !== 'ol') {
+                    flushList();
+                    html += '<ol class="list-decimal list-inside my-2 pl-5 space-y-1">';
+                    listType = 'ol';
+                }
+                html += `<li>${isOl[1]}</li>`;
+            } else if (isUl) {
+                flushPara();
+                if (listType !== 'ul') {
+                    flushList();
+                    html += '<ul class="list-disc list-inside my-2 pl-5 space-y-1">';
+                    listType = 'ul';
+                }
+                html += `<li>${isUl[1]}</li>`;
+            } else {
+                flushList();
+                if (line.trim() === '') {
+                    flushPara();
+                } else {
+                    paraBuffer += (paraBuffer ? '<br/>' : '') + line;
+                }
+            }
+        }
+
+        flushPara();
+        flushList();
+
+        return { __html: html };
+    };
+
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (query.trim()) {
+            onSendMessage(query);
+            setQuery('');
+        }
+    };
+
+    const handleSourceClick = (text: string) => {
+        setModalContent(text);
+    };
+
+    const closeModal = () => {
+        setModalContent(null);
+    };
+
+    useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [history, isQueryLoading]);
+
+    return (
+        <div className="flex flex-col h-full relative">
+            <header className="absolute top-0 left-0 right-0 p-4 bg-gem-onyx/80 backdrop-blur-sm z-10 flex justify-between items-center border-b border-gem-mist">
+                <div className="w-full max-w-4xl mx-auto flex justify-between items-center px-4">
+                    <h1 className="text-2xl font-bold text-gem-offwhite truncate" title={`Chat with ${documentName}`}>Chat with {documentName}</h1>
+                    <button
+                        onClick={onNewChat}
+                        className="flex items-center px-4 py-2 bg-gem-blue hover:bg-blue-500 rounded-full text-white transition-colors flex-shrink-0"
+                        title="End current chat and start a new one"
+                    >
+                        <RefreshIcon />
+                        <span className="ml-2 hidden sm:inline">New Chat</span>
+                    </button>
+                </div>
+            </header>
+
+            <div className="flex-grow pt-24 pb-32 overflow-y-auto px-4">
+                <div className="w-full max-w-4xl mx-auto space-y-6">
+                    {history.map((message, index) => (
+                        <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`max-w-xl lg:max-w-2xl px-5 py-3 rounded-2xl ${
+                                message.role === 'user' 
+                                ? 'bg-gem-blue text-white' 
+                                : 'bg-gem-slate'
+                            }`}>
+                                <div dangerouslySetInnerHTML={renderMarkdown(message.parts[0].text)} />
+                                {message.role === 'model' && message.groundingChunks && message.groundingChunks.length > 0 && (
+                                    <div className="mt-4 pt-3 border-t border-gem-mist/50">
+                                        <h4 className="text-xs font-semibold text-gem-offwhite/70 mb-2 text-right">Sources:</h4>
+                                        <div className="flex flex-wrap gap-2 justify-end">
+                                            {message.groundingChunks.map((chunk, chunkIndex) => (
+                                                chunk.retrievedContext?.text && (
+                                                    <button
+                                                        key={chunkIndex}
+                                                        onClick={() => handleSourceClick(chunk.retrievedContext!.text!)}
+                                                        className="bg-gem-mist/50 hover:bg-gem-mist text-xs px-3 py-1 rounded-md transition-colors"
+                                                        aria-label={`View source ${chunkIndex + 1}`}
+                                                        title="View source document chunk"
+                                                    >
+                                                        Source {chunkIndex + 1}
+                                                    </button>
+                                                )
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                    {isQueryLoading && (
+                        <div className="flex justify-start">
+                            <div className="max-w-xl lg:max-w-2xl px-5 py-3 rounded-2xl bg-gem-slate flex items-center">
+                                <Spinner />
+                            </div>
+                        </div>
+                    )}
+                    <div ref={chatEndRef} />
+                </div>
+            </div>
+
+            <div className="absolute bottom-0 left-0 right-0 p-4 bg-gem-onyx/80 backdrop-blur-sm">
+                 <div className="max-w-4xl mx-auto">
+                    <div className="text-center mb-2 min-h-[3rem] flex items-center justify-center">
+                        {!isQueryLoading && currentSuggestion && (
+                            <button
+                                onClick={() => setQuery(currentSuggestion)}
+                                className="text-base text-gem-offwhite bg-gem-slate hover:bg-gem-mist transition-colors px-4 py-2 rounded-full"
+                                title="Use this suggestion as your prompt"
+                            >
+                                Try: "{currentSuggestion}"
+                            </button>
+                        )}
+                    </div>
+                     <form onSubmit={handleSubmit} className="flex items-center space-x-3">
+                        <input
+                            type="text"
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            placeholder="Ask a question about the manuals..."
+                            className="flex-grow bg-gem-mist border border-gem-mist/50 rounded-full py-3 px-5 focus:outline-none focus:ring-2 focus:ring-gem-blue"
+                            disabled={isQueryLoading}
+                        />
+                        <button type="submit" disabled={isQueryLoading || !query.trim()} className="p-3 bg-gem-blue hover:bg-blue-500 rounded-full text-white disabled:bg-gem-mist transition-colors" title="Send message">
+                            <SendIcon />
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            {modalContent !== null && (
+                <div 
+                    className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" 
+                    onClick={closeModal} 
+                    role="dialog" 
+                    aria-modal="true"
+                    aria-labelledby="source-modal-title"
+                >
+                    <div className="bg-gem-slate p-6 rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                        <h3 id="source-modal-title" className="text-xl font-bold mb-4">Source Text</h3>
+                        <div 
+                            className="flex-grow overflow-y-auto pr-4 text-gem-offwhite/80 border-t border-b border-gem-mist py-4"
+                            dangerouslySetInnerHTML={renderMarkdown(modalContent || '')}
+                        >
+                        </div>
+                        <div className="flex justify-end mt-6">
+                            <button onClick={closeModal} className="px-6 py-2 rounded-md bg-gem-blue hover:bg-blue-500 text-white transition-colors" title="Close source view">
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default ChatInterface;
+
+=== components/WelcomeScreen.tsx ===
+import React, { useState, useCallback } from 'react';
+import Spinner from './Spinner';
+import UploadCloudIcon from './icons/UploadCloudIcon';
+import TrashIcon from './icons/TrashIcon';
+
+interface WelcomeScreenProps {
+    onUpload: () => Promise<void>;
+    apiKeyError: string | null;
+    files: File[];
+    setFiles: React.Dispatch<React.SetStateAction<File[]>>;
+    isApiKeySelected: boolean;
+    onSelectKey: () => Promise<void>;
+    usingEnvKey?: boolean;
+}
+
+
+
+const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onUpload, apiKeyError, files, setFiles, isApiKeySelected, onSelectKey, usingEnvKey }) => {
+    const [isDragging, setIsDragging] = useState(false);
+
+    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        if (event.target.files) {
+            setFiles(prev => [...prev, ...Array.from(event.target.files!)]);
+        }
+    };
+
+    const handleDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setIsDragging(false);
+        if (event.dataTransfer.files) {
+            setFiles(prev => [...prev, ...Array.from(event.dataTransfer.files)]);
+        }
+    }, [setFiles]);
+
+    const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!isDragging) setIsDragging(true);
+    }, [isDragging]);
+
+    const handleDragLeave = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setIsDragging(false);
+    }, []);
+
+    const handleConfirmUpload = async () => {
+        try {
+            await onUpload();
+        } catch (error) {
+            // Error is handled by the parent component, but we catch it here
+            // to prevent an "uncaught promise rejection" warning in the console.
+            console.error("Upload process failed:", error);
+        }
+    };
+
+    const handleRemoveFile = (indexToRemove: number) => {
+        setFiles(prevFiles => prevFiles.filter((_, index) => index !== indexToRemove));
+    };
+
+    const handleSelectKeyClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
+        e.preventDefault();
+        await onSelectKey();
+    };
+
+    return (
+        <div className="flex flex-col items-center justify-center min-h-screen p-4 sm:p-6 lg:p-8">
+            <div className="w-full max-w-3xl text-center">
+                <h1 className="text-4xl sm:text-5xl font-bold mb-2">Chat With Your Document</h1>
+                <p className="text-gem-offwhite/70 mb-8">
+                    Powered by <strong className="font-semibold text-gem-offwhite">FileSearch</strong>. Upload a manual or select example to see RAG in action.
+                </p>
+
+                <div className="w-full max-w-xl mx-auto mb-8">
+                    {!usingEnvKey && (
+                        !isApiKeySelected ? (
+                            <button
+                                onClick={handleSelectKeyClick}
+                                className="w-full bg-gem-blue hover:bg-blue-500 text-white font-semibold rounded-lg py-3 px-5 text-center focus:outline-none focus:ring-2 focus:ring-gem-blue"
+                            >
+                                Select Gemini API Key to Begin
+                            </button>
+                        ) : (
+                            <div className="w-full bg-gem-slate border border-gem-mist/50 rounded-lg py-3 px-5 text-center text-gem-teal font-semibold">
+                                ✓ API Key Selected
+                            </div>
+                        )
+                    )}
+                    {apiKeyError && <p className="text-red-500 text-sm mt-2">{apiKeyError}</p>}
+                </div>
+
+                <div
+                    className={`relative border-2 border-dashed rounded-lg p-10 text-center transition-colors mb-6 ${isDragging ? 'border-gem-blue bg-gem-mist/10' : 'border-gem-mist/50'}`}
+                    onDrop={handleDrop} onDragOver={handleDragOver} onDragLeave={handleDragLeave}
+                >
+                    <div className="flex flex-col items-center justify-center">
+                        <UploadCloudIcon />
+                        <p className="mt-4 text-lg text-gem-offwhite/80">Drag & drop your PDF, .txt, or .md file here.</p>
+                        <input id="file-upload" type="file" multiple className="hidden" onChange={handleFileChange} accept=".pdf,.txt,.md" />
+                        <label
+                            htmlFor="file-upload"
+                            className="mt-4 cursor-pointer px-6 py-2 bg-gem-blue text-white rounded-full font-semibold hover:bg-blue-500 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gem-onyx focus:ring-gem-blue"
+                            title="Select files from your device"
+                            tabIndex={0}
+                            onKeyDown={e => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    (document.getElementById('file-upload') as HTMLInputElement)?.click();
+                                }
+                            }}
+                        >
+                            Or Browse Files
+                        </label>
+                    </div>
+                </div>
+
+                {files.length > 0 && (
+                    <div className="w-full max-w-xl mx-auto mb-6 text-left">
+                        <h4 className="font-semibold mb-2">Selected Files ({files.length}):</h4>
+                        <ul className="max-h-36 overflow-y-auto space-y-1 pr-2">
+                            {files.map((file, index) => (
+                                <li key={`${file.name}-${index}`} className="text-sm bg-gem-mist/50 p-2 rounded-md flex justify-between items-center group">
+                                    <span className="truncate" title={file.name}>{file.name}</span>
+                                    <div className="flex items-center flex-shrink-0">
+                                        <span className="text-xs text-gem-offwhite/50 ml-2">{(file.size / 1024).toFixed(2)} KB</span>
+                                        <button
+                                            onClick={() => handleRemoveFile(index)}
+                                            className="ml-2 p-1 text-red-400 hover:text-red-300 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                            aria-label={`Remove ${file.name}`}
+                                            title="Remove this file"
+                                        >
+                                            <TrashIcon />
+                                        </button>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+
+                <div className="w-full max-w-xl mx-auto">
+                    {files.length > 0 && (
+                        <button
+                            onClick={handleConfirmUpload}
+                            disabled={!isApiKeySelected}
+                            className="w-full px-6 py-3 rounded-md bg-gem-blue hover:bg-blue-500 text-white font-bold transition-colors disabled:bg-gem-mist/50 disabled:cursor-not-allowed"
+                            title={!isApiKeySelected ? "Please select an API key first" : "Start chat session with the selected files"}
+                        >
+                            Upload and Chat
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
+export default WelcomeScreen;
+
+=== index.html ===
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <script type="importmap">
+    {
+      "imports": {
+        "react/": "https://aistudiocdn.com/react@^19.2.0/",
+        "react": "https://aistudiocdn.com/react@^19.2.0",
+        "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+        "@google/genai": "https://esm.sh/@google/genai@^1.29.0"
+      }
+    }
+    </script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gemini RAG Store Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'gem-onyx': '#f8fafc',
+              'gem-slate': '#ffffff',
+              'gem-mist': '#e2e8f0',
+              'gem-offwhite': '#1e293b',
+              'gem-teal': '#0d9488',
+              'gem-blue': '#2563eb',
+            },
+            keyframes: {
+              'progress-stripes': {
+                'from': { backgroundPosition: '1rem 0' },
+                'to': { backgroundPosition: '0 0' },
+              },
+            },
+            animation: {
+              'progress-stripes': 'progress-stripes 1s linear infinite',
+            },
+          }
+        }
+      }
+    </script>
+  
+  <link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-gem-onyx">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
+
+=== tsconfig.json ===
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "module": "ESNext",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "skipLibCheck": true,
+    "types": [
+      "node"
+    ],
+    "moduleResolution": "bundler",
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "allowJs": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    },
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  }
+}
